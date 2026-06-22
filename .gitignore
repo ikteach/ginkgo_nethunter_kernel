@@ -18,6 +18,7 @@
 *.dtb.S
 *.dwo
 *.elf
+*.img
 *.gcno
 *.gz
 *.ko
@@ -125,6 +126,17 @@ all.config
 kernel/configs/android-*.cfg
 
 #
-#Ignoring Android.bp link file
-#
-Android.bp
+# Ignore local toolchains
+toolchains/
+
+# Ignore build output
+out/
+
+# Ignore packaged modules
+modules_*.tar.gz
+
+# Ignore temp files
+*.swp
+*.swo
+modules_out/
+modules/
