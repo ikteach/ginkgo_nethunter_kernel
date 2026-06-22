@@ -7,8 +7,7 @@ green='\033[0;32m'
 yellow='\033[0;33m'
 clear_color='\033[0m'
 
-# Memory-aware thread management (prevents VM freezing)
-# Calculates threads based on RAM (approx 2GB per thread, capped by available CPU cores)
+# Memory-aware thread management
 MEM_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
 MEM_GB=$((MEM_KB / 1024 / 1024))
 CORES=$(nproc --all)
@@ -32,6 +31,8 @@ export KBUILD_BUILD_HOST="Linux"
 make_options="O=$out_dir ARCH=arm64 CC=clang AS=llvm-as CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- LLVM=1 LLVM_IAS=1 DTC_EXT=$tc_dir/bin/dtc"
 make_prefix=""
 
+# Parse arguments
+config_only=false
 while getopts "m:chb" opt; do
     case $opt in
     m)
@@ -47,15 +48,10 @@ while getopts "m:chb" opt; do
             tarball="gingko-modules-$(date '+%Y%m%d-%H%M').tar.gz"
             dtbo="arch/arm64/boot/dts/xiaomi/ginkgo-trinket-overlay.dtbo"
         else
-            exit 1
+            printf "${red}Invalid model: $model${clear_color}\n"; usage
         fi
-        config_command="$nh_config"
         ;;
-    c) 
-        mkdir -p "$out_dir"
-        cp "$topdir/arch/arm64/configs/$nh_config" "$out_dir/.config"
-        config_command="nconfig" 
-        ;;
+    c) config_only=true ;;
     b) make_prefix="ionice -c 3 chrt --idle 0 nice -n19" ;;
     h) usage ;;
     esac
@@ -67,12 +63,25 @@ if [ -z "$model" ]; then usage; fi
 export PATH="$tc_dir/bin:$PATH"
 [ -d "$tc_dir" ] || { mkdir -p "$tc_dir"; cd "$tc_dir"; curl -fsSL "$tc_url" | tar --zstd -xf -; cd "$topdir"; }
 
-# Build execution
-printf "${green}Starting compilation with $THREADS threads (RAM-aware)...${clear_color}\n"
 mkdir -p "$out_dir"
 
+# --- Configuration Handling ---
+if [ "$config_only" = true ]; then
+    [ -f "$out_dir/.config" ] || cp "$topdir/arch/arm64/configs/$nh_config" "$out_dir/.config"
+    printf "${yellow}Opening nconfig...${clear_color}\n"
+    ${make_prefix} make ${make_options} nconfig
+    printf "${yellow}Saving new configuration to $nh_config...${clear_color}\n"
+    ${make_prefix} make ${make_options} savedefconfig
+    cp "$out_dir/defconfig" "$topdir/arch/arm64/configs/$nh_config"
+    printf "${green}Configuration updated and saved. Exiting.${clear_color}\n"
+    exit 0
+fi
+
+# --- Build Execution ---
+printf "${green}Starting compilation with $THREADS threads (RAM-aware)...${clear_color}\n"
+
 # Configure if needed
-[ -f "$out_dir/.config" ] || ${make_prefix} make ${make_options} $config_command
+[ -f "$out_dir/.config" ] || ${make_prefix} make ${make_options} $nh_config
 
 # Build kernel and modules
 ${make_prefix} make ${make_options} -j$THREADS Image.gz modules
